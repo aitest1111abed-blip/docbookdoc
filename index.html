@@ -3048,9 +3048,13 @@
         _docBC.onmessage = function(e) { _handleNurseAlert(e.data); };
       } catch(e) {}
 
-      // الإعدادات
+      // الإعدادات (يدمج مع المحفوظ محلياً ويحدّثه)
       window._fb.getDoc('settings', 'doctor').then(function(snap) {
-        if (snap.exists()) { settings = snap.data(); applySettings(); }
+        if (snap.exists()) {
+          settings = Object.assign({}, settings, snap.data());
+          try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+          applySettings();
+        }
       }).catch(function(){});
 
       // التنبيه المخصص
@@ -5526,6 +5530,8 @@
 
     const SETTINGS_KEY = 'doctorSettings';
     let settings = {};
+    // تحميل فوري من التخزين المحلي حتى لا تختفي المعلومات عند تحديث الصفحة
+    (function() { try { var raw = localStorage.getItem(SETTINGS_KEY); if (raw) settings = JSON.parse(raw) || {}; } catch (e) {} })();
 
     function applySettings() {
       const title = settings.title || 'لوحة الطبيب';
@@ -5547,7 +5553,8 @@
     }
 
     function saveSettingsToLocal(s) {
-      window._fb.setDoc(window._fb.docRef('settings', 'doctor'), s)
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+      window._fb.setDoc(window._fb.docRef('settings', 'doctor'), s, { merge: true })
         .catch(function(e) { console.error('settings save error', e); });
     }
 
@@ -7287,7 +7294,19 @@
         + 'th{background:#f0fdfa;color:#0f766e;font-weight:800;}'
         + '.watermark{position:absolute;top:54%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px;opacity:.06;z-index:1;}'
         + '.contact{position:absolute;bottom:46px;left:0;width:100%;z-index:5;display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:18px;color:#fff;font-size:12.5px;font-weight:600;padding:0 30px;}'
-        + '.contact .ct b{font-weight:800;} .contact .sep{opacity:.55;}';
+        + '.contact .ct b{font-weight:800;} .contact .sep{opacity:.55;}'
+        // عناصر الوصفة
+        + '.grid2{display:grid;grid-template-columns:1fr 1px 1fr;gap:30px;margin-bottom:26px;}'
+        + '.vdiv{background:#d7e6e3;}'
+        + '.r{display:flex;align-items:flex-end;gap:8px;margin-bottom:24px;}'
+        + '.r .lb{font-weight:800;color:#0f766e;white-space:nowrap;font-size:13.5px;padding-bottom:2px;}'
+        + '.r .vl{flex:1;border-bottom:1.6px dotted #5bb8af;min-height:20px;font-weight:700;color:#0f172a;font-size:13.5px;padding:0 4px 3px;text-align:center;}'
+        + '.rx{display:flex;align-items:center;gap:10px;margin:6px 0 14px;}'
+        + '.rxsym{font-size:42px;font-weight:900;color:#0f766e;font-family:Georgia,serif;line-height:1;} .rxsym sub{font-size:22px;}'
+        + '.rxline{flex:1;height:2px;background:#0d9488;border-radius:2px;}'
+        + '.rxbody{min-height:330px;white-space:pre-wrap;line-height:2.1;font-size:16px;color:#0f172a;padding:0 6px;}'
+        + '.sig{margin-top:30px;display:flex;justify-content:flex-start;}'
+        + '.sig .box-s{width:240px;text-align:center;} .sig .lb{font-weight:800;color:#0f766e;font-size:13.5px;} .sig .ln{margin-top:30px;border-top:1.6px dotted #5bb8af;}';
       var waveTop = '<svg class="wt" viewBox="0 0 1000 200" preserveAspectRatio="none"><path d="M0,0 H1000 V120 C835,200 700,150 500,162 C320,172 165,200 0,150 Z" fill="#0d9488"/><path d="M0,0 H1000 V92 C800,158 660,112 480,130 C300,148 150,150 0,122 Z" fill="#3bbcae" opacity="0.5"/></svg>';
       var waveBot = '<svg class="wb" viewBox="0 0 1000 200" preserveAspectRatio="none"><path d="M0,200 H1000 V92 C820,18 690,72 500,56 C320,40 160,12 0,72 Z" fill="#0d9488"/><path d="M0,200 H1000 V122 C800,58 650,102 470,86 C300,72 150,80 0,112 Z" fill="#3bbcae" opacity="0.5"/></svg>';
       var cps = [];
@@ -7298,7 +7317,6 @@
       var head = '<div class="head"><div class="docinfo"><div class="dname">' + escapeHtml(docName) + '</div>'
         + (specialty ? '<div class="dspec"><span class="dash">—</span> ' + escapeHtml(specialty) + ' <span class="dash">—</span></div>' : '')
         + '</div><div class="logo">' + brandHtml + '</div></div><div class="divider"></div>';
-      var w = window.open('', '_blank'); if (!w) { showToast('اسمح بالنوافذ المنبثقة للطباعة', 'error'); return; }
       var html = '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>' + pillText + '</title>'
         + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         + '<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">'
@@ -7308,9 +7326,35 @@
           + '<div class="watermark">' + emblem + '</div>'
           + '<div class="content">' + head + innerHtml + '</div>'
           + (contactHtml ? '<div class="contact">' + contactHtml + '</div>' : '')
-        + '</div>'
-        + '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},450);}</scr' + 'ipt></body></html>';
-      w.document.write(html); w.document.close();
+        + '</div></body></html>';
+      _doPrint(html);
+    }
+
+    // ===== طباعة عبر iframe مخفي — لا نوافذ منبثقة ولا تعليق للتطبيق =====
+    function _doPrint(html) {
+      var old = document.getElementById('_printFrame');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      var f = document.createElement('iframe');
+      f.id = '_printFrame';
+      f.setAttribute('aria-hidden', 'true');
+      f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+      document.body.appendChild(f);
+      var fired = false;
+      function cleanup() { if (f && f.parentNode) f.parentNode.removeChild(f); }
+      function fire() {
+        if (fired) return; fired = true;
+        try {
+          var cw = f.contentWindow;
+          cw.onafterprint = function() { setTimeout(cleanup, 200); };
+          cw.focus();
+          cw.print();
+        } catch (e) { console.error('print error', e); }
+        setTimeout(cleanup, 60000); // تنظيف احتياطي
+      }
+      f.onload = function() { setTimeout(fire, 450); };
+      var d = f.contentWindow.document;
+      d.open(); d.write(html); d.close();
+      setTimeout(fire, 1600); // احتياطي إن لم يُطلق onload
     }
 
     window.printPatientChart = function(pid) {
@@ -7334,110 +7378,25 @@
     };
     window.printPrescription = function(pid, idx) {
       var p = allPatients[pid]; var v = p && p.appointments && p.appointments[idx]; if (!v) return;
-      var s = (typeof settings !== 'undefined' && settings) ? settings : {};
-      var docName  = s.title || 'الطبيب';
-      var specialty = s.specialty || '';
-      var mobile   = s.mobile || '';
-      var landline = s.landline || '';
-      var address  = s.address || '';
-      var logo     = s.logo || '';
-      var age = p.birthDate ? calculateAge(p.birthDate) : null;
-
-      // أيقونات SVG (خطية تيل)
-      function ic(path, fill) {
-        return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="' + (fill || '#0d9488') + '" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">' + path + '</svg>';
+      function ic(path) {
+        return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#0d9488" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">' + path + '</svg>';
       }
       var icUser = ic('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>');
       var icPin  = ic('<path d="M12 22s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/>');
       var icCal  = ic('<rect x="3" y="4" width="18" height="17" rx="2.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>');
-      var icPen  = ic('<path d="M12 20h9"/><path d="M16.7 3.3a2.1 2.1 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5z"/>');
-      // شعار القلب الطبي (احتياطي + علامة مائية)
-      var emblem = '<svg viewBox="0 0 100 100" width="100%" height="100%"><path d="M50 86 C22 64 9 46 9 31 A20 20 0 0 1 50 23 A20 20 0 0 1 91 31 C91 46 78 64 50 86 Z" fill="none" stroke="#0d9488" stroke-width="3.4"/><rect x="44" y="36" width="12" height="30" rx="2" fill="#0d9488"/><rect x="35" y="45" width="30" height="12" rx="2" fill="#0d9488"/></svg>';
-      // شعار DocBook أعلى يسار الوصفة
-      var brandHtml = '<div class="brand-emblem">' + emblem + '</div><div class="brand-text"><span class="b1">Doc</span><span class="b2">Book</span></div>';
-
       function row(icon, label, val) {
         return '<div class="r">' + icon + '<span class="lb">' + label + '</span><span class="vl">' + (val ? escapeHtml(val) : '') + '</span></div>';
       }
       var rxText = v.prescription ? escapeHtml(v.prescription) : '';
-
-      var contactParts = [];
-      if (address)  contactParts.push('<span class="ct"><b>العنوان:</b> ' + escapeHtml(address) + '</span>');
-      if (mobile)   contactParts.push('<span class="ct"><b>موبايل:</b> ' + escapeHtml(mobile) + '</span>');
-      if (landline) contactParts.push('<span class="ct"><b>الأرضي:</b> ' + escapeHtml(landline) + '</span>');
-      var contactHtml = contactParts.join('<span class="sep">•</span>');
-
-      var w = window.open('', '_blank'); if (!w) { showToast('اسمح بالنوافذ المنبثقة للطباعة', 'error'); return; }
-      var css = '@page{size:A4;margin:0;}'
-        + '*{font-family:Cairo,Tajawal,Arial,sans-serif;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
-        + 'html,body{margin:0;padding:0;}'
-        + '.sheet{position:relative;width:210mm;min-height:296mm;margin:0 auto;background:#fff;overflow:hidden;}'
-        + '.wt,.wb{position:absolute;left:0;width:100%;height:150px;display:block;}'
-        + '.wt{top:0;} .wb{bottom:0;}'
-        + '.pill{position:absolute;top:30px;right:46px;z-index:5;display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.85);color:#fff;border-radius:30px;padding:7px 18px 7px 8px;font-weight:800;font-size:15px;}'
-        + '.pill .pc{width:24px;height:24px;border-radius:50%;background:#fff;color:#0d9488;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;}'
-        + '.content{position:relative;z-index:3;padding:170px 46px 0;}'
-        + '.head{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:6px;}'
-        + '.docinfo{text-align:right;min-width:0;}'
-        + '.dname{font-size:30px;font-weight:900;color:#0f766e;line-height:1.1;}'
-        + '.dspec{font-size:15px;font-weight:800;color:#0d9488;margin-top:6px;}'
-        + '.dspec .dash{color:#7fcabf;}'
-        + '.logo{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}'
-        + '.brand-emblem{width:96px;height:96px;}'
-        + '.brand-text{font-weight:900;font-size:26px;letter-spacing:-.5px;line-height:1;}'
-        + '.brand-text .b1{color:#115e59;} .brand-text .b2{color:#0d9488;}'
-        + '.divider{height:1.5px;background:#e2e8f0;margin:10px 0 22px;}'
-        + '.sig{margin-top:30px;display:flex;justify-content:flex-start;}'
-        + '.sig .box-s{width:240px;text-align:center;}'
-        + '.sig .lb{font-weight:800;color:#0f766e;font-size:13.5px;}'
-        + '.sig .ln{margin-top:30px;border-top:1.6px dotted #5bb8af;}'
-        + '.grid2{display:grid;grid-template-columns:1fr 1px 1fr;gap:30px;margin-bottom:26px;}'
-        + '.vdiv{background:#d7e6e3;}'
-        + '.r{display:flex;align-items:flex-end;gap:8px;margin-bottom:24px;}'
-        + '.r .lb{font-weight:800;color:#0f766e;white-space:nowrap;font-size:13.5px;padding-bottom:2px;}'
-        + '.r .vl{flex:1;border-bottom:1.6px dotted #5bb8af;min-height:20px;font-weight:700;color:#0f172a;font-size:13.5px;padding:0 4px 3px;text-align:center;}'
-        + '.rx{display:flex;align-items:center;gap:10px;margin:6px 0 14px;}'
-        + '.rxsym{font-size:42px;font-weight:900;color:#0f766e;font-family:Georgia,serif;line-height:1;}'
-        + '.rxsym sub{font-size:22px;}'
-        + '.rxline{flex:1;height:2px;background:#0d9488;border-radius:2px;}'
-        + '.rxbody{min-height:330px;white-space:pre-wrap;line-height:2.1;font-size:16px;color:#0f172a;padding:0 6px;}'
-        + '.extra{margin-top:8px;font-size:13.5px;color:#0f172a;line-height:1.8;padding:0 6px;}'
-        + '.extra .ex-t{font-weight:800;color:#0f766e;}'
-        + '.watermark{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px;opacity:.06;z-index:1;}'
-        + '.contact{position:absolute;bottom:46px;left:0;width:100%;z-index:5;display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:14px;color:#fff;font-size:12.5px;font-weight:600;padding:0 30px;}'
-        + '.contact .ct{display:inline-flex;align-items:center;gap:5px;}'
-        + '.contact .sep{opacity:.6;}';
-
-      var waveTop = '<svg class="wt" viewBox="0 0 1000 200" preserveAspectRatio="none"><path d="M0,0 H1000 V120 C835,200 700,150 500,162 C320,172 165,200 0,150 Z" fill="#0d9488"/><path d="M0,0 H1000 V92 C800,158 660,112 480,130 C300,148 150,150 0,122 Z" fill="#3bbcae" opacity="0.5"/></svg>';
-      var waveBot = '<svg class="wb" viewBox="0 0 1000 200" preserveAspectRatio="none"><path d="M0,200 H1000 V92 C820,18 690,72 500,56 C320,40 160,12 0,72 Z" fill="#0d9488"/><path d="M0,200 H1000 V122 C800,58 650,102 470,86 C300,72 150,80 0,112 Z" fill="#3bbcae" opacity="0.5"/></svg>';
-
-      var html = '<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>وصفة طبية — ' + escapeHtml(p.name || '') + '</title>'
-        + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-        + '<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">'
-        + '<style>' + css + '</style></head><body>'
-        + '<div class="sheet">'
-          + waveTop + waveBot
-          + '<div class="pill"><span class="pc">+</span> وصفة طبية</div>'
-          + '<div class="watermark">' + emblem + '</div>'
-          + '<div class="content">'
-            + '<div class="head"><div class="docinfo"><div class="dname">' + escapeHtml(docName) + '</div>'
-              + (specialty ? '<div class="dspec"><span class="dash">—</span> ' + escapeHtml(specialty) + ' <span class="dash">—</span></div>' : '')
-              + '</div><div class="logo">' + brandHtml + '</div></div>'
-            + '<div class="divider"></div>'
-            + '<div class="grid2">'
-              + '<div class="col">' + row(icUser, 'اسم المريض/ة :', p.name) + row(icPin, 'العنوان :', p.address) + '</div>'
-              + '<div class="vdiv"></div>'
-              + '<div class="col">' + row(icCal, 'التاريخ :', formatDateAr(v.date)) + '</div>'
-            + '</div>'
-            + '<div class="rx"><span class="rxsym">R<sub>x</sub></span><span class="rxline"></span></div>'
-            + '<div class="rxbody">' + rxText + '</div>'
-            + '<div class="sig"><div class="box-s"><div class="lb">توقيع الطبيب</div><div class="ln"></div></div></div>'
-          + '</div>'
-          + (contactHtml ? '<div class="contact">' + contactHtml + '</div>' : '')
+      var inner = '<div class="grid2">'
+          + '<div class="col">' + row(icUser, 'اسم المريض/ة :', p.name) + row(icPin, 'العنوان :', p.address) + '</div>'
+          + '<div class="vdiv"></div>'
+          + '<div class="col">' + row(icCal, 'التاريخ :', formatDateAr(v.date)) + '</div>'
         + '</div>'
-        + '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},450);}</scr' + 'ipt></body></html>';
-      w.document.write(html);
-      w.document.close();
+        + '<div class="rx"><span class="rxsym">R<sub>x</sub></span><span class="rxline"></span></div>'
+        + '<div class="rxbody">' + rxText + '</div>'
+        + '<div class="sig"><div class="box-s"><div class="lb">توقيع الطبيب</div><div class="ln"></div></div></div>';
+      _printSheet('وصفة طبية', inner);
     };
   </script>
 
