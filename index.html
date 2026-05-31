@@ -1732,33 +1732,43 @@
     function initAuthWatch() {
       var ov = document.getElementById('loginOverlay');
 
-      window._fb.onAuth(function(user) {
-        if (user) {
-          // Firebase يؤكد الجلسة — افتح اللوحة
-          ov.style.transition = 'opacity .3s';
-          ov.style.opacity = '0';
-          setTimeout(function(){ ov.style.display = 'none'; }, 300);
+      function revealApp() {
+        ov.style.transition = 'opacity .3s';
+        ov.style.opacity = '0';
+        setTimeout(function(){ ov.style.display = 'none'; }, 300);
+      }
+      function showLogin(msg) {
+        ov.style.display = 'flex'; ov.style.opacity = '1';
+        if (msg) { var errEl = document.getElementById('loginError'); if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg; } }
+      }
 
-          // تحقق من الدور مرة واحدة فقط
-          if (!_dataLoaded) {
-            window._fb.getDoc('users', user.uid).then(function(snap) {
-              var role = snap.exists() ? snap.data().role : null;
-              if (role !== 'doctor') {
-                window._fb.signOut();
-                ov.style.display = 'flex'; ov.style.opacity = '1';
-                var errEl = document.getElementById('loginError');
-                if (errEl) { errEl.style.display='block'; errEl.textContent='هذا الحساب غير مصرح له بالدخول هنا'; }
-                return;
-              }
-              _dataLoaded = true;
-              if (typeof loadData === 'function') loadData();
-            }).catch(function(e) { console.error('[Auth]', e); });
-          }
-        } else {
-          // Firebase يؤكد عدم وجود جلسة — أظهر شاشة الدخول
+      window._fb.onAuth(function(user) {
+        if (!user) {
+          // لا توجد جلسة — أظهر شاشة الدخول
           _dataLoaded = false;
-          ov.style.display = 'flex'; ov.style.opacity = '1';
+          showLogin();
+          return;
         }
+        // جلسة موجودة، لكن لا نكشف اللوحة قبل التأكد أن الدور = طبيب
+        if (_dataLoaded) { revealApp(); return; }
+        window._fb.getDoc('users', user.uid).then(function(snap) {
+          var role = snap.exists() ? snap.data().role : null;
+          if (role !== 'doctor') {
+            // حساب غير مصرّح (مثل الممرضة) — سجّل الخروج وابقَ على شاشة الدخول دون كشف اللوحة
+            return window._fb.signOut().then(function() {
+              _dataLoaded = false;
+              showLogin('هذا الحساب غير مصرح له بالدخول هنا');
+            });
+          }
+          // طبيب مؤكَّد — الآن فقط افتح اللوحة وحمّل البيانات
+          _dataLoaded = true;
+          revealApp();
+          if (typeof loadData === 'function') loadData();
+        }).catch(function(e) {
+          console.error('[Auth]', e);
+          // عند تعذّر التحقق لا نكشف اللوحة إطلاقاً
+          showLogin('تعذّر التحقق من الصلاحية، حاول مجدداً');
+        });
       });
     }
     if (window._fbReady) initAuthWatch();
